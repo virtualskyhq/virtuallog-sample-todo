@@ -1,0 +1,59 @@
+import type { BrowserLogger } from './logger';
+
+export type Todo = {
+  id: string;
+  title: string;
+  completed: boolean;
+  createdAt: string;
+};
+
+export type Api = {
+  list(): Promise<Todo[]>;
+  create(title: string): Promise<Todo>;
+  toggle(id: string): Promise<Todo>;
+  remove(id: string): Promise<void>;
+  triggerServerError(): Promise<void>;
+};
+
+export const createApi = (logger: BrowserLogger): Api => {
+  const request = async <T,>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> => {
+    const sessionId = logger.getSessionId();
+    const userName = logger.getUserName();
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (sessionId) headers['x-vl-session'] = sessionId;
+    if (userName) headers['x-vl-user'] = userName;
+
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+
+    if (!res.ok) {
+      const message = `${method} ${path} -> ${res.status}`;
+      logger.error({
+        event: 'api_error',
+        method,
+        path,
+        status: res.status,
+        message,
+      });
+      throw new Error(message);
+    }
+
+    if (res.status === 204) return undefined as T;
+    return (await res.json()) as T;
+  };
+
+  return {
+    list: () => request<Todo[]>('GET', '/todos'),
+    create: (title) => request<Todo>('POST', '/todos', { title }),
+    toggle: (id) => request<Todo>('PATCH', `/todos/${id}/toggle`),
+    remove: (id) => request<void>('DELETE', `/todos/${id}`),
+    triggerServerError: () => request<void>('POST', '/todos/_demo/error'),
+  };
+};
