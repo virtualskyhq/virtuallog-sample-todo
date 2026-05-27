@@ -15,7 +15,7 @@ Live demo: [sample-todo.virtuallog.io](https://sample-todo.virtuallog.io)
 Open the app, click around — every action emits a log tagged with your `userName` and `sessionId`. In your VirtualLog dashboard you can:
 
 - Filter by `sessionId` to see one user's full session in isolation
-- Filter by `event` (e.g. `todo_created`, `api_error`) to spot patterns
+- Filter by `message` (e.g. `Todo created`, `API error`) to spot patterns
 - Chart errors over time, count requests, alert on failures
 - Drill from a client click into the matching server request (same `sessionId`)
 
@@ -31,18 +31,18 @@ cd virtuallog-sample-todo
 npm install
 ```
 
-### 2. (Optional) point the server logger at your VirtualLog instance
+### 2. Configure the VirtualLog connection (`.env`)
 
-The browser is configured at runtime (see step 4). The server reads from `.env`:
+*Where* logs go and the *key* to send them live in a `.env` at the repo root — two variables, one entry per concept. The **server** reads them via `--env-file=.env`; the **browser logger** reads the same two through Vite (`client/vite.config.ts` widens `envPrefix` to `VIRTUALLOG_*`). They're read in exactly one client file — `client/logger.ts`. Identity (`userName` / `sessionId`) is **not** here — that's entered on the login screen at runtime (step 4).
 
 ```bash
-cp .env.example .env
-# edit .env and set:
-#   VIRTUALLOG_ENDPOINT=https://<your_server>/logs
-#   VIRTUALLOG_API_KEY=<your_api_key>
+VIRTUALLOG_ENDPOINT=https://<your_server>/logs
+VIRTUALLOG_API_KEY=<your_api_key>
 ```
 
-Leave the values empty to keep server logs on stdout only — useful for local exploration.
+`.env` is gitignored. Omit it (or leave the values blank) to keep every log in the console only — the app still works, the browser just prints a one-time warning instead of forwarding.
+
+> **Security note**: because the browser logger reads them, these two values are baked into the JS bundle at build time. For this demo that's intentional — the ingest key is meant to be public (ingestion-only, rate-limited). For a real app with a secret key, keep `envPrefix` at Vite's default and proxy log POSTs through your own backend instead.
 
 ### 3. Build and run
 
@@ -59,23 +59,16 @@ npm run build
 npm start       # http://localhost:3000 serves both the React build and the API
 ```
 
-### 4. Configure the browser
+### 4. Identify yourself
 
-Open the app — a setup screen blocks the UI until you fill four mandatory fields:
+Open the app — a login screen blocks the UI until you set who you are. Two fields:
 
 | Field                  | Notes                                                                                      |
 |------------------------|--------------------------------------------------------------------------------------------|
 | **User Name**          | Any label that identifies who is using the app.                                            |
-| **Browser Session ID** | Click **Generate** for a random 16-char ID. Used to group all logs from this browser into one session in VirtualLog. |
-| **VirtualLog domain**  | Full URL of your VirtualLog ingest endpoint, e.g. `https://<your_server>/logs`.            |
-| **API Key**            | A VirtualLog API key with ingestion role.                                                  |
+| **Browser Session ID** | Paste your `browserSessionId` from VirtualLog to correlate, or click **Generate** for a random 16-char ID. Groups all logs from this browser into one session. |
 
-The four values are stored in `localStorage` and sent on every log:
-
-- `x-api-key` header carries the API key
-- `sessionId` and `userName` are included in the JSON body
-
-Click **Enter app** to start using the todo.
+Both values are saved to `localStorage` and read by the logger on every emit — `userName` + `sessionId` go in the JSON body. The `x-api-key` header and target URL come from the `.env` config (step 2), not the form. Click **Enter app** to start.
 
 ### 5. Open VirtualLog and navigate the logs
 
@@ -88,30 +81,30 @@ In your VirtualLog dashboard:
 
 ## How the logging works
 
-`shared/log-events.ts` defines every event the app can emit, as a discriminated union:
+`shared/log-events.ts` defines a single flat `LogPayload`. `message` is a free-form label you pass straight from the call site — nothing to pre-register — and you attach any extra context as additional fields:
 
 ```ts
-export type ServerLogEvent =
-  | { event: 'todo_created'; todoId: string; title: string }
-  | { event: 'validation_failed'; field: string; reason: string }
-  | ...;
+export type LogPayload = {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  timestamp: string;
+  app: string;
+  module: 'server' | 'client';
+  message: string;
+  sessionId?: string;
+  userName?: string;
+  [key: string]: unknown;
+};
 ```
 
-Both `server/logger.ts` and `client/logger.ts` take that union as a generic constraint:
+Both `server/logger.ts` and `client/logger.ts` accept `{ message, ...context }` and fill in the wrapper fields — and, in the browser, identity from `localStorage` — at send time:
 
 ```ts
-info: <E extends ServerLogEvent>(event: E, context?: LogContext) => void;
+logger.info({ message: 'Todo created', todoId, title });
+logger.warn({ message: 'Validation failed', field: 'title', reason: 'empty' });
+logger.error({ message: 'API error', method, path, status, error });
 ```
 
-Result: at the call site, TypeScript narrows the event variant by the literal `event` value and enforces the rest of the fields exactly.
-
-```ts
-log.info({ event: 'todo_created', todoId, title });        // OK
-log.info({ event: 'todo_created', todoId });               // missing title
-log.info({ event: 'todo_created', todoId, title, extra }); // excess property
-```
-
-Add a new event? Add a variant in `shared/log-events.ts` and every call site is type-checked.
+In the browser console each line prints as `LEVEL  time  message  {…remaining fields}`; over the wire the full `LogPayload` is POSTed to VirtualLog with the `x-api-key` header.
 
 ## Project layout
 
@@ -122,15 +115,16 @@ server/routes.ts           Todo CRUD + /api/todos/_demo/error
 server/db.ts               In-memory store
 server/logger.ts           Server-side logger (POSTs to VirtualLog endpoint)
 client/main.tsx            React entry
-client/App.tsx             SetupGate + Todo UI + Playground
+client/App.tsx             LoginGate (identity) + Todo UI + Playground
 client/api.ts              Fetch wrapper, propagates sessionId + userName
-client/logger.ts           Browser logger (runtime config in localStorage,
-                           POSTs with x-api-key header)
+client/session.ts          Identity in localStorage (userName + sessionId)
+client/logger.ts           Browser logger: config (domain + key) from env at
+                           init, identity from session.ts at emit, x-api-key header
 ```
 
 ## Playground
 
 Two buttons in the UI to populate VirtualLog quickly:
 
-- **Trigger server error** — calls `POST /api/todos/_demo/error` which returns 500 and logs `simulated_server_error`.
-- **Trigger client error** — emits a client-side `simulated_client_error` log.
+- **Trigger server error** — calls `POST /api/todos/_demo/error` which returns 500 and logs `Simulated server error`.
+- **Trigger client error** — emits a client-side `Simulated client error` log.

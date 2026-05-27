@@ -1,69 +1,55 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { createLogger, generateSessionId, type LoggerSetup } from './logger';
+import { createLogger, virtualLogDomain } from './logger';
+import {
+  hasIdentity,
+  saveSession,
+  clearSession,
+  getUserName,
+  getSessionId,
+  generateSessionId,
+} from './session';
 import { createApi, type Todo } from './api';
-
-const DEFAULT_DOMAIN =
-  (import.meta.env.VITE_VIRTUALLOG_ENDPOINT as string | undefined) ||
-  'https://<your_server>/logs';
 
 const logger = createLogger({ appName: 'sample-todo' });
 const api = createApi(logger);
 
 export const App = () => {
-  const [configured, setConfigured] = useState(logger.isConfigured());
+  const [configured, setConfigured] = useState(hasIdentity());
 
   if (!configured) {
-    return <SetupGate onDone={() => setConfigured(true)} />;
+    return <LoginGate onDone={() => setConfigured(true)} />;
   }
 
   return <TodoApp onResetSetup={() => setConfigured(false)} />;
 };
 
-type SetupGateProps = { onDone: () => void };
+type LoginGateProps = { onDone: () => void };
 
-const SetupGate = ({ onDone }: SetupGateProps) => {
-  const existing = logger.getSetup();
-  const [userName, setUserName] = useState(existing.userName ?? '');
-  const [sessionId, setSessionId] = useState(existing.sessionId ?? '');
-  const [domain, setDomain] = useState(existing.domain ?? DEFAULT_DOMAIN);
-  const [apiKey, setApiKey] = useState(existing.apiKey ?? '');
+const LoginGate = ({ onDone }: LoginGateProps) => {
+  const [userName, setUserName] = useState(getUserName() ?? '');
+  const [sessionId, setSessionId] = useState(getSessionId() ?? '');
 
-  const allFilled =
-    userName.trim() !== '' &&
-    sessionId.trim() !== '' &&
-    domain.trim() !== '' &&
-    apiKey.trim() !== '';
+  const allFilled = userName.trim() !== '' && sessionId.trim() !== '';
 
-  const handleGenerateId = () => {
-    const id = generateSessionId(16);
-    setSessionId(id);
-  };
+  const handleGenerateId = () => setSessionId(generateSessionId(16));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!allFilled) return;
-    const setup: LoggerSetup = {
-      userName: userName.trim(),
-      sessionId: sessionId.trim(),
-      domain: domain.trim(),
-      apiKey: apiKey.trim(),
-    };
-    logger.saveSetup(setup);
-    logger.info({
-      event: 'setup_completed',
-      userName: setup.userName,
-      sessionId: setup.sessionId,
-    });
+    const identity = { userName: userName.trim(), sessionId: sessionId.trim() };
+    saveSession(identity);
+    logger.info({ message: 'Setup completed', ...identity });
     onDone();
   };
 
   return (
     <div style={styles.overlay}>
       <form style={styles.setupCard} onSubmit={handleSubmit}>
-        <h1 style={styles.setupTitle}>VirtualLog setup</h1>
+        <h1 style={styles.setupTitle}>Who's logging?</h1>
         <p style={styles.setupSubtitle}>
-          Fill in all four fields below to start the demo. Logs from this
-          session will be forwarded to your VirtualLog server.
+          Identify yourself so you can filter your own activity in VirtualLog.
+          The server connection is configured from the environment — you only
+          set who you are.
         </p>
 
         <Field label="User Name" required>
@@ -83,7 +69,7 @@ const SetupGate = ({ onDone }: SetupGateProps) => {
               type="text"
               value={sessionId}
               onChange={(e) => setSessionId(e.target.value)}
-              placeholder="16-character random ID"
+              placeholder="Paste from VirtualLog or generate one"
               style={{ ...styles.input, flex: 1 }}
             />
             <button
@@ -95,31 +81,10 @@ const SetupGate = ({ onDone }: SetupGateProps) => {
             </button>
           </div>
           <p style={styles.fieldHint}>
-            This ID groups all logs from this browser into one user session in
-            VirtualLog. Use it as a filter on the dashboard to see only your
-            own activity.
+            Groups every log from this browser into one session. Paste your
+            browserSessionId from VirtualLog to correlate, or generate a fresh
+            one, then filter by it on the dashboard to see only your activity.
           </p>
-        </Field>
-
-        <Field label="VirtualLog domain" required>
-          <input
-            type="url"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            placeholder="https://<your_server>/logs"
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="API Key" required>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Your VirtualLog API key"
-            style={styles.input}
-            autoComplete="off"
-          />
         </Field>
 
         <button
@@ -159,11 +124,11 @@ type TodoAppProps = { onResetSetup: () => void };
 const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [draft, setDraft] = useState('');
-  const sessionId = logger.getSessionId();
-  const userName = logger.getUserName();
+  const sessionId = getSessionId();
+  const userName = getUserName();
 
   useEffect(() => {
-    logger.info({ event: 'app_loaded', userAgent: navigator.userAgent });
+    logger.info({ message: 'App loaded', userAgent: navigator.userAgent });
     api
       .list()
       .then(setTodos)
@@ -175,10 +140,10 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   const addTodo = async () => {
     const title = draft.trim();
     if (!title) {
-      logger.warn({ event: 'empty_title_rejected' });
+      logger.warn({ message: 'Empty title rejected' });
       return;
     }
-    logger.info({ event: 'add_todo_clicked', title });
+    logger.info({ message: 'Add todo clicked', title });
     try {
       const todo = await api.create(title);
       setTodos((prev) => [todo, ...prev]);
@@ -189,7 +154,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const toggleTodo = async (todo: Todo) => {
-    logger.info({ event: 'toggle_clicked', todoId: todo.id });
+    logger.info({ message: 'Toggle clicked', todoId: todo.id });
     try {
       const updated = await api.toggle(todo.id);
       setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -199,7 +164,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const deleteTodo = async (todo: Todo) => {
-    logger.info({ event: 'delete_clicked', todoId: todo.id });
+    logger.info({ message: 'Delete clicked', todoId: todo.id });
     try {
       await api.remove(todo.id);
       setTodos((prev) => prev.filter((t) => t.id !== todo.id));
@@ -209,8 +174,8 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const resetSetup = () => {
-    logger.info({ event: 'setup_reset' });
-    logger.clearSetup();
+    logger.info({ message: 'Setup reset' });
+    clearSession();
     onResetSetup();
   };
 
@@ -223,8 +188,8 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const triggerClientError = () => {
-    const message = 'Simulated client error from Playground';
-    logger.error({ event: 'simulated_client_error', message });
+    const detail = 'Simulated client error from Playground';
+    logger.error({ message: 'Simulated client error', error: detail });
   };
 
   return (
@@ -320,7 +285,9 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
 
       <footer style={styles.footer}>
         VirtualLog endpoint:{' '}
-        <code style={styles.code}>{logger.getDomain()}</code>
+        <code style={styles.code}>
+          {virtualLogDomain || 'not configured (console only)'}
+        </code>
       </footer>
     </div>
   );

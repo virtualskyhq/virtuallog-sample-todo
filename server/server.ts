@@ -27,7 +27,7 @@ app.use(express.json());
 app.use((req, _res, next) => {
   const sessionId = req.header('x-vl-session') ?? undefined;
   log.info(
-    { event: 'request_received', method: req.method, path: req.path },
+    { message: 'Request received', method: req.method, path: req.path },
     { sessionId },
   );
   next();
@@ -42,7 +42,7 @@ app.get(/^(?!\/api).*/, (_req, res) => {
 });
 
 app.listen(port, () => {
-  log.info({ event: 'server_started', port });
+  log.info({ message: 'Server started', port });
   // eslint-disable-next-line no-console
   console.log(`sample-todo listening on http://localhost:${port}`);
 });

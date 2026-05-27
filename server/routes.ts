@@ -19,7 +19,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
 
     if (!title) {
       log.warn(
-        { event: 'validation_failed', field: 'title', reason: 'empty or not a string' },
+        { message: 'Validation failed', field: 'title', reason: 'empty or not a string' },
         { sessionId },
       );
       res.status(400).json({ error: 'title is required' });
@@ -28,7 +28,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
 
     const todo = db.create(title);
     log.info(
-      { event: 'todo_created', todoId: todo.id, title: todo.title },
+      { message: 'Todo created', todoId: todo.id, title: todo.title },
       { sessionId },
     );
     res.status(201).json(todo);
@@ -44,7 +44,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
     }
 
     log.info(
-      { event: 'todo_toggled', todoId: todo.id, completed: todo.completed },
+      { message: 'Todo toggled', todoId: todo.id, completed: todo.completed },
       { sessionId },
     );
     res.json(todo);
@@ -59,7 +59,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
       return;
     }
 
-    log.info({ event: 'todo_deleted', todoId: req.params.id }, { sessionId });
+    log.info({ message: 'Todo deleted', todoId: req.params.id }, { sessionId });
     res.status(204).end();
   });
 
@@ -67,9 +67,9 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
   // log surface in VirtualLog.
   router.post('/_demo/error', (req, res) => {
     const sessionId = getSessionId(req);
-    const message = 'Simulated server error from /api/todos/_demo/error';
-    log.error({ event: 'simulated_server_error', message }, { sessionId });
-    res.status(500).json({ error: message });
+    const detail = 'Simulated server error from /api/todos/_demo/error';
+    log.error({ message: 'Simulated server error', error: detail }, { sessionId });
+    res.status(500).json({ error: detail });
   });
 
   return router;

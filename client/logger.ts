@@ -1,124 +1,109 @@
-import type { ClientLogEvent, LogPayload } from '../shared/log-events';
+import type { LogPayload } from '../shared/log-events';
+import { getUserName, getSessionId } from './session';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
-const STORAGE_KEYS = {
-  sessionId: 'vl-session-id',
-  userName: 'vl-user-name',
-  domain: 'vl-domain',
-  apiKey: 'vl-api-key',
-} as const;
+// What a caller passes: a message plus any context. The logger adds the
+// wrapper + identity fields, so the caller never sets those.
+type LogInput = { message: string; [key: string]: unknown };
 
-export type LoggerSetup = {
-  userName: string;
-  sessionId: string;
-  domain: string;
-  apiKey: string;
-};
+// Connection config is fixed per deployment and read once, here only, from the
+// build-time env (Vite exposes VIRTUALLOG_* — see vite.config.ts envPrefix).
+const DOMAIN = import.meta.env.VIRTUALLOG_ENDPOINT as string | undefined;
+const API_KEY = import.meta.env.VIRTUALLOG_API_KEY as string | undefined;
+
+// Exposed so the UI can show where logs are going.
+export const virtualLogDomain = DOMAIN ?? '';
+
+if (!DOMAIN || !API_KEY) {
+  // One-time heads-up. The app still works; logs just stay in the console.
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[vl] VIRTUALLOG_ENDPOINT / VIRTUALLOG_API_KEY not set in .env — logs will only be printed to the console, not forwarded to VirtualLog.',
+  );
+}
 
 type LoggerConfig = {
   appName: string;
 };
 
-// Same generic pattern as the server logger — see shared/log-events.ts for the
-// motivation. The discriminated union flows through the generic, so misnaming
-// a field at a call site is a TypeScript error rather than runtime garbage.
+// No setup phase: config from env at init, identity from localStorage at emit.
 export type BrowserLogger = {
-  debug: <E extends ClientLogEvent>(event: E) => void;
-  info: <E extends ClientLogEvent>(event: E) => void;
-  warn: <E extends ClientLogEvent>(event: E) => void;
-  error: <E extends ClientLogEvent>(event: E) => void;
-  getSetup: () => Partial<LoggerSetup>;
-  saveSetup: (setup: LoggerSetup) => void;
-  clearSetup: () => void;
-  isConfigured: () => boolean;
-  getSessionId: () => string | null;
-  getUserName: () => string | null;
-  getDomain: () => string | null;
+  debug: (input: LogInput) => void;
+  info: (input: LogInput) => void;
+  warn: (input: LogInput) => void;
+  error: (input: LogInput) => void;
 };
 
-const readKey = (key: string): string | null => {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(key);
+// HH:mm:ss.zzz in the browser's local timezone, for the console line only.
+// The wire payload keeps the full ISO timestamp.
+const formatTime = (iso: string): string => {
+  const d = new Date(iso);
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 };
 
-export const generateSessionId = (length = 32): string => {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  let out = '';
-  for (let i = 0; i < length; i++) out += alphabet[bytes[i] % alphabet.length];
-  return out;
-};
+// Shown as their own columns, or transport noise — kept out of the trailing
+// JSON of the console line.
+const CONSOLE_EXCLUDED = new Set([
+  'level',
+  'timestamp',
+  'message',
+  'sessionId',
+  'userAgent',
+  'app',
+  'module',
+]);
 
 export const createLogger = (config: LoggerConfig): BrowserLogger => {
-  const emit = (level: LogLevel) =>
-    <E extends ClientLogEvent>(event: E) => {
-      const sessionId = readKey(STORAGE_KEYS.sessionId) ?? undefined;
-      const userName = readKey(STORAGE_KEYS.userName) ?? undefined;
-      const domain = readKey(STORAGE_KEYS.domain);
-      const apiKey = readKey(STORAGE_KEYS.apiKey);
-
-      const payload: LogPayload<E> = {
-        ...event,
-        level,
-        timestamp: new Date().toISOString(),
-        app: config.appName,
-        module: 'client',
-        sessionId,
-        userName,
-      };
-
-      // eslint-disable-next-line no-console
-      console.log('[vl]', payload);
-
-      if (!domain || !apiKey) return;
-
-      // fetch + keepalive: survives unload like sendBeacon but supports custom
-      // headers (sendBeacon cannot send x-api-key).
-      fetch(domain, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-        },
-        body: JSON.stringify(payload),
-        keepalive: true,
-      }).catch(() => {
-        /* logging must never break the app */
-      });
+  const emit = (level: LogLevel) => (input: LogInput) => {
+    const payload: LogPayload = {
+      ...input,
+      level,
+      timestamp: new Date().toISOString(),
+      app: config.appName,
+      module: 'client',
     };
+
+    // Identity is read fresh at send time; omit whatever isn't set.
+    const userName = getUserName();
+    const sessionId = getSessionId();
+    if (userName) payload.userName = userName;
+    if (sessionId) payload.sessionId = sessionId;
+
+    const rest = Object.fromEntries(
+      Object.entries(payload).filter(([key]) => !CONSOLE_EXCLUDED.has(key)),
+    );
+    // LEVEL  time  message  {remaining attributes}
+    // eslint-disable-next-line no-console
+    console.log(
+      payload.level.toUpperCase(),
+      formatTime(payload.timestamp),
+      payload.message,
+      Object.keys(rest).length ? JSON.stringify(rest) : '',
+    );
+
+    if (!DOMAIN || !API_KEY) return;
+
+    // fetch + keepalive: survives page unload like sendBeacon but supports the
+    // custom x-api-key header (sendBeacon cannot send headers).
+    fetch(DOMAIN, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': API_KEY,
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {
+      /* logging must never break the app */
+    });
+  };
 
   return {
     debug: emit('debug'),
     info: emit('info'),
     warn: emit('warn'),
     error: emit('error'),
-    getSetup: () => ({
-      userName: readKey(STORAGE_KEYS.userName) ?? undefined,
-      sessionId: readKey(STORAGE_KEYS.sessionId) ?? undefined,
-      domain: readKey(STORAGE_KEYS.domain) ?? undefined,
-      apiKey: readKey(STORAGE_KEYS.apiKey) ?? undefined,
-    }),
-    saveSetup: (setup) => {
-      localStorage.setItem(STORAGE_KEYS.userName, setup.userName);
-      localStorage.setItem(STORAGE_KEYS.sessionId, setup.sessionId);
-      localStorage.setItem(STORAGE_KEYS.domain, setup.domain);
-      localStorage.setItem(STORAGE_KEYS.apiKey, setup.apiKey);
-    },
-    clearSetup: () => {
-      localStorage.removeItem(STORAGE_KEYS.userName);
-      localStorage.removeItem(STORAGE_KEYS.sessionId);
-      localStorage.removeItem(STORAGE_KEYS.domain);
-      localStorage.removeItem(STORAGE_KEYS.apiKey);
-    },
-    isConfigured: () =>
-      !!readKey(STORAGE_KEYS.userName) &&
-      !!readKey(STORAGE_KEYS.sessionId) &&
-      !!readKey(STORAGE_KEYS.domain) &&
-      !!readKey(STORAGE_KEYS.apiKey),
-    getSessionId: () => readKey(STORAGE_KEYS.sessionId),
-    getUserName: () => readKey(STORAGE_KEYS.userName),
-    getDomain: () => readKey(STORAGE_KEYS.domain),
   };
 };

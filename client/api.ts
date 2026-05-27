@@ -1,4 +1,5 @@
 import type { BrowserLogger } from './logger';
+import { getSessionId, getUserName } from './session';
 
 export type Todo = {
   id: string;
@@ -21,8 +22,8 @@ export const createApi = (logger: BrowserLogger): Api => {
     path: string,
     body?: unknown,
   ): Promise<T> => {
-    const sessionId = logger.getSessionId();
-    const userName = logger.getUserName();
+    const sessionId = getSessionId();
+    const userName = getUserName();
     const headers: Record<string, string> = { 'content-type': 'application/json' };
     if (sessionId) headers['x-vl-session'] = sessionId;
     if (userName) headers['x-vl-user'] = userName;
@@ -34,15 +35,15 @@ export const createApi = (logger: BrowserLogger): Api => {
     });
 
     if (!res.ok) {
-      const message = `${method} ${path} -> ${res.status}`;
+      const detail = `${method} ${path} -> ${res.status}`;
       logger.error({
-        event: 'api_error',
+        message: 'API error',
         method,
         path,
         status: res.status,
-        message,
+        error: detail,
       });
-      throw new Error(message);
+      throw new Error(detail);
     }
 
     if (res.status === 204) return undefined as T;

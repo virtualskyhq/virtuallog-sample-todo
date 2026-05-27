@@ -4,13 +4,13 @@
   "private": true,
   "description": "A simple Todo app demonstrating VirtualLog integration on both server (Node/Express) and browser (React), with typed log events end-to-end.",
   "scripts": {
-    "dev:server": "tsx watch server/server.ts",
+    "dev:server": "tsx watch --env-file=.env server/server.ts",
     "dev:client": "vite --config client/vite.config.ts",
     "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
     "build:client": "vite build --config client/vite.config.ts",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:client && npm run build:server",
-    "start": "node dist/server/server.js",
+    "start": "node --env-file=.env dist/server/server.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit"
   },
   "dependencies": {
