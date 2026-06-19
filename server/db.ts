@@ -12,6 +12,7 @@ export type Db = {
   create(title: string): Todo;
   toggle(id: string): Todo | null;
   remove(id: string): boolean;
+  clear(): void;
 };
 
 // In-memory store on purpose: zero setup for someone cloning the repo.
@@ -43,5 +44,6 @@ export const createDb = (): Db => {
       return updated;
     },
     remove: (id) => todos.delete(id),
+    clear: () => todos.clear(),
   };
 };

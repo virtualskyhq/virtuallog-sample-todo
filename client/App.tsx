@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { createLogger, virtualLogDomain } from './logger';
+import log, { virtualLogDomain } from './log';
 import {
   hasIdentity,
   saveSession,
@@ -10,8 +10,7 @@ import {
 } from './session';
 import { createApi, type Todo } from './api';
 
-const logger = createLogger({ appName: 'sample-todo' });
-const api = createApi(logger);
+const api = createApi(log);
 
 export const App = () => {
   const [configured, setConfigured] = useState(hasIdentity());
@@ -38,7 +37,7 @@ const LoginGate = ({ onDone }: LoginGateProps) => {
     if (!allFilled) return;
     const identity = { userName: userName.trim(), sessionId: sessionId.trim() };
     saveSession(identity);
-    logger.info({ message: 'Setup completed', ...identity });
+    log.info('Setup completed', identity);
     onDone();
   };
 
@@ -128,7 +127,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   const userName = getUserName();
 
   useEffect(() => {
-    logger.info({ message: 'App loaded', userAgent: navigator.userAgent });
+    log.info('App loaded', { userAgent: navigator.userAgent });
     api
       .list()
       .then(setTodos)
@@ -140,10 +139,10 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   const addTodo = async () => {
     const title = draft.trim();
     if (!title) {
-      logger.warn({ message: 'Empty title rejected' });
+      log.warn('Empty title rejected');
       return;
     }
-    logger.info({ message: 'Add todo clicked', title });
+    log.info('Add todo clicked', { title });
     try {
       const todo = await api.create(title);
       setTodos((prev) => [todo, ...prev]);
@@ -154,7 +153,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const toggleTodo = async (todo: Todo) => {
-    logger.info({ message: 'Toggle clicked', todoId: todo.id });
+    log.info('Toggle clicked', { todoId: todo.id });
     try {
       const updated = await api.toggle(todo.id);
       setTodos((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -164,7 +163,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   };
 
   const deleteTodo = async (todo: Todo) => {
-    logger.info({ message: 'Delete clicked', todoId: todo.id });
+    log.info('Delete clicked', { todoId: todo.id });
     try {
       await api.remove(todo.id);
       setTodos((prev) => prev.filter((t) => t.id !== todo.id));
@@ -173,8 +172,9 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
     }
   };
 
-  const resetSetup = () => {
-    logger.info({ message: 'Setup reset' });
+  const resetSetup = async () => {
+    log.info('Setup reset');
+    await api.clear().catch(() => { /* logged in api.ts */ });
     clearSession();
     onResetSetup();
   };
@@ -189,7 +189,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
 
   const triggerClientError = () => {
     const detail = 'Simulated client error from Playground';
-    logger.error({ message: 'Simulated client error', error: detail });
+    log.error('Simulated client error', { error: detail });
   };
 
   return (

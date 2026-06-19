@@ -1,4 +1,4 @@
-import type { BrowserLogger } from './logger';
+import type { BrowserLogger } from './log';
 import { getSessionId, getUserName } from './session';
 
 export type Todo = {
@@ -13,6 +13,7 @@ export type Api = {
   create(title: string): Promise<Todo>;
   toggle(id: string): Promise<Todo>;
   remove(id: string): Promise<void>;
+  clear(): Promise<void>;
   triggerServerError(): Promise<void>;
 };
 
@@ -36,13 +37,7 @@ export const createApi = (logger: BrowserLogger): Api => {
 
     if (!res.ok) {
       const detail = `${method} ${path} -> ${res.status}`;
-      logger.error({
-        message: 'API error',
-        method,
-        path,
-        status: res.status,
-        error: detail,
-      });
+      logger.error('API error', { method, path, status: res.status, error: detail });
       throw new Error(detail);
     }
 
@@ -55,6 +50,7 @@ export const createApi = (logger: BrowserLogger): Api => {
     create: (title) => request<Todo>('POST', '/todos', { title }),
     toggle: (id) => request<Todo>('PATCH', `/todos/${id}/toggle`),
     remove: (id) => request<void>('DELETE', `/todos/${id}`),
+    clear: () => request<void>('DELETE', '/todos'),
     triggerServerError: () => request<void>('POST', '/todos/_demo/error'),
   };
 };

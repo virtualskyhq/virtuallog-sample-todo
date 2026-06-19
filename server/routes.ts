@@ -1,6 +1,6 @@
 import { Router, type Request } from 'express';
 import type { Db } from './db';
-import type { ServerLogger } from './logger';
+import type { ServerLogger } from './log';
 
 const SESSION_HEADER = 'x-vl-session';
 const getSessionId = (req: Request): string | undefined =>
@@ -18,19 +18,13 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
 
     if (!title) {
-      log.warn(
-        { message: 'Validation failed', field: 'title', reason: 'empty or not a string' },
-        { sessionId },
-      );
+      log.warn('Validation failed', { field: 'title', reason: 'empty or not a string', sessionId });
       res.status(400).json({ error: 'title is required' });
       return;
     }
 
     const todo = db.create(title);
-    log.info(
-      { message: 'Todo created', todoId: todo.id, title: todo.title },
-      { sessionId },
-    );
+    log.info('Todo created', { todoId: todo.id, title: todo.title, sessionId });
     res.status(201).json(todo);
   });
 
@@ -43,10 +37,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
       return;
     }
 
-    log.info(
-      { message: 'Todo toggled', todoId: todo.id, completed: todo.completed },
-      { sessionId },
-    );
+    log.info('Todo toggled', { todoId: todo.id, completed: todo.completed, sessionId });
     res.json(todo);
   });
 
@@ -59,7 +50,14 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
       return;
     }
 
-    log.info({ message: 'Todo deleted', todoId: req.params.id }, { sessionId });
+    log.info('Todo deleted', { todoId: req.params.id, sessionId });
+    res.status(204).end();
+  });
+
+  router.delete('/', (req, res) => {
+    const sessionId = getSessionId(req);
+    db.clear();
+    log.info('All todos cleared', { sessionId });
     res.status(204).end();
   });
 
@@ -68,7 +66,7 @@ export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
   router.post('/_demo/error', (req, res) => {
     const sessionId = getSessionId(req);
     const detail = 'Simulated server error from /api/todos/_demo/error';
-    log.error({ message: 'Simulated server error', error: detail }, { sessionId });
+    log.error('Simulated server error', { error: detail, sessionId });
     res.status(500).json({ error: detail });
   });
 
