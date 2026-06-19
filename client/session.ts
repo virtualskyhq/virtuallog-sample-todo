@@ -1,31 +1,27 @@
-// Per-visitor identity, kept in localStorage. This is the only place that
-// knows the storage keys — the logger reads identity through here, the login
-// page writes it through here. Connection config (domain + API key) is NOT
-// here: that lives in .env and is read directly by the logger.
+let _userName: string | null = null;
+let _sessionId: string | null = null;
+let _accessToken: string | null = null;
 
-const KEYS = {
-  userName: 'vl-user-name',
-  sessionId: 'vl-session-id',
-} as const;
-
-const read = (key: string): string | null =>
-  typeof localStorage === 'undefined' ? null : localStorage.getItem(key);
-
-export const getUserName = (): string | null => read(KEYS.userName);
-export const getSessionId = (): string | null => read(KEYS.sessionId);
+export const getUserName = (): string | null => _userName;
+export const getSessionId = (): string | null => _sessionId;
+export const getAccessToken = (): string | null => _accessToken;
 
 export const saveSession = (identity: { userName: string; sessionId: string }): void => {
-  localStorage.setItem(KEYS.userName, identity.userName);
-  localStorage.setItem(KEYS.sessionId, identity.sessionId);
+  _userName = identity.userName;
+  _sessionId = identity.sessionId;
+};
+
+export const saveAccessToken = (token: string): void => {
+  _accessToken = token;
 };
 
 export const clearSession = (): void => {
-  localStorage.removeItem(KEYS.userName);
-  localStorage.removeItem(KEYS.sessionId);
+  _userName = null;
+  _sessionId = null;
+  _accessToken = null;
 };
 
-// A userName is the minimum needed to consider a visitor "logged in".
-export const hasIdentity = (): boolean => !!getUserName();
+export const hasIdentity = (): boolean => !!_accessToken;
 
 export const generateSessionId = (length = 16): string => {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';

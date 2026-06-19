@@ -6,6 +6,7 @@ export type LogParams = {
   todoId?: string;
   title?: string;
   completed?: boolean;
+  userName?: string;
   sessionId?: string;
   method?: string;
   path?: string;

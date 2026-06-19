@@ -1,70 +1,64 @@
 import { Router, type Request } from 'express';
 import type { Db } from './db';
 import type { ServerLogger } from './log';
-
-const SESSION_HEADER = 'x-vl-session';
-const getSessionId = (req: Request): string | undefined =>
-  req.header(SESSION_HEADER) ?? undefined;
+import type { AuthRequest } from './server';
 
 export const createTodoRoutes = (db: Db, log: ServerLogger): Router => {
   const router = Router();
 
-  router.get('/', (_req, res) => {
-    res.json(db.list());
+  const auth = (req: Request): AuthRequest['auth'] => (req as AuthRequest).auth;
+
+  router.get('/', (req, res) => {
+    const { userName } = auth(req);
+    res.json(db.list(userName));
   });
 
   router.post('/', (req, res) => {
-    const sessionId = getSessionId(req);
+    const { userName, sessionId } = auth(req);
     const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
-
     if (!title) {
       log.warn('Validation failed', { field: 'title', reason: 'empty or not a string', sessionId });
       res.status(400).json({ error: 'title is required' });
       return;
     }
-
-    const todo = db.create(title);
+    const todo = db.create(userName, title);
     log.info('Todo created', { todoId: todo.id, title: todo.title, sessionId });
     res.status(201).json(todo);
   });
 
   router.patch('/:id/toggle', (req, res) => {
-    const sessionId = getSessionId(req);
-    const todo = db.toggle(req.params.id);
-
+    const { userName, sessionId } = auth(req);
+    const todo = db.toggle(userName, req.params.id);
     if (!todo) {
       res.status(404).json({ error: 'not found' });
       return;
     }
-
     log.info('Todo toggled', { todoId: todo.id, completed: todo.completed, sessionId });
     res.json(todo);
   });
 
-  router.delete('/:id', (req, res) => {
-    const sessionId = getSessionId(req);
-    const ok = db.remove(req.params.id);
+  router.delete('/', (req, res) => {
+    const { userName, sessionId } = auth(req);
+    db.clear(userName);
+    log.info('All todos cleared', { sessionId });
+    res.status(204).end();
+  });
 
+  router.delete('/:id', (req, res) => {
+    const { userName, sessionId } = auth(req);
+    const ok = db.remove(userName, req.params.id);
     if (!ok) {
       res.status(404).json({ error: 'not found' });
       return;
     }
-
     log.info('Todo deleted', { todoId: req.params.id, sessionId });
-    res.status(204).end();
-  });
-
-  router.delete('/', (req, res) => {
-    const sessionId = getSessionId(req);
-    db.clear();
-    log.info('All todos cleared', { sessionId });
     res.status(204).end();
   });
 
   // Playground endpoint: deliberately errors so the visitor can see an ERROR
   // log surface in VirtualLog.
   router.post('/_demo/error', (req, res) => {
-    const sessionId = getSessionId(req);
+    const { sessionId } = auth(req);
     const detail = 'Simulated server error from /api/todos/_demo/error';
     log.error('Simulated server error', { error: detail, sessionId });
     res.status(500).json({ error: detail });

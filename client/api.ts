@@ -1,5 +1,5 @@
 import type { BrowserLogger } from './log';
-import { getSessionId, getUserName } from './session';
+import { getAccessToken } from './session';
 
 export type Todo = {
   id: string;
@@ -9,6 +9,8 @@ export type Todo = {
 };
 
 export type Api = {
+  login(userName: string, sessionId: string): Promise<{ accessToken: string }>;
+  logout(): Promise<void>;
   list(): Promise<Todo[]>;
   create(title: string): Promise<Todo>;
   toggle(id: string): Promise<Todo>;
@@ -23,11 +25,9 @@ export const createApi = (logger: BrowserLogger): Api => {
     path: string,
     body?: unknown,
   ): Promise<T> => {
-    const sessionId = getSessionId();
-    const userName = getUserName();
+    const token = getAccessToken();
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (sessionId) headers['x-vl-session'] = sessionId;
-    if (userName) headers['x-vl-user'] = userName;
+    if (token) headers['authorization'] = `Bearer ${token}`;
 
     const res = await fetch(`/api${path}`, {
       method,
@@ -46,6 +46,9 @@ export const createApi = (logger: BrowserLogger): Api => {
   };
 
   return {
+    login: (userName, sessionId) =>
+      request<{ accessToken: string }>('POST', '/auth/login', { userName, sessionId }),
+    logout: () => request<void>('POST', '/auth/logout'),
     list: () => request<Todo[]>('GET', '/todos'),
     create: (title) => request<Todo>('POST', '/todos', { title }),
     toggle: (id) => request<Todo>('PATCH', `/todos/${id}/toggle`),

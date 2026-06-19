@@ -3,6 +3,7 @@ import log, { virtualLogDomain } from './log';
 import {
   hasIdentity,
   saveSession,
+  saveAccessToken,
   clearSession,
   getUserName,
   getSessionId,
@@ -32,11 +33,13 @@ const LoginGate = ({ onDone }: LoginGateProps) => {
 
   const handleGenerateId = () => setSessionId(generateSessionId(16));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!allFilled) return;
     const identity = { userName: userName.trim(), sessionId: sessionId.trim() };
+    const { accessToken } = await api.login(identity.userName, identity.sessionId);
     saveSession(identity);
+    saveAccessToken(accessToken);
     log.info('Setup completed', identity);
     onDone();
   };
@@ -175,6 +178,7 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
   const resetSetup = async () => {
     log.info('Setup reset');
     await api.clear().catch(() => { /* logged in api.ts */ });
+    await api.logout().catch(() => { /* best-effort */ });
     clearSession();
     onResetSetup();
   };
