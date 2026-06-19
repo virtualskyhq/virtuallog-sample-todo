@@ -41,8 +41,26 @@ app.get(/^(?!\/api).*/, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   log.info({ message: 'Server started', port });
   // eslint-disable-next-line no-console
   console.log(`sample-todo listening on http://localhost:${port}`);
+});
+
+// Without this, a busy port emits an unhandled 'error' event that crashes the
+// process with a raw stack trace. The most common cause is a previous dev
+// server (tsx watch / concurrently) that was left running. Fail with a clear,
+// actionable message instead.
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    log.error({ message: 'Port already in use', port });
+    // eslint-disable-next-line no-console
+    console.error(
+      `\n✖ Port ${port} is already in use — another instance is probably still running.\n` +
+        `  Free it:  lsof -ti tcp:${port} | xargs kill\n` +
+        `  Or change PORT in .env\n`,
+    );
+    process.exit(1);
+  }
+  throw err;
 });
