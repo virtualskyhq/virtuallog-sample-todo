@@ -1,4 +1,5 @@
 import type { LogPayload } from '../shared/log-events';
+import { getContext } from './context';
 
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -35,7 +36,10 @@ if (!ENDPOINT || !API_KEY) {
 }
 
 const emit = (level: LogLevel) => (message: string, params?: LogParams) => {
+  const ctx = getContext();
   const payload: LogPayload = {
+    sessionId: ctx.sessionId,
+    userName: ctx.userName,
     ...params,
     message,
     level,

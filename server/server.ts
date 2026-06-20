@@ -3,6 +3,7 @@ import path from 'path';
 import { createDb } from './db';
 import log from './log';
 import { createSessionStore, type Session } from './sessions';
+import { storage } from './context';
 import { createTodoRoutes } from './routes';
 
 const port = Number(process.env.PORT) || 3000;
@@ -60,14 +61,21 @@ const requireAuth = (req: Request, res: Response, next: NextFunction): void => {
   next();
 };
 
-app.post('/api/auth/logout', requireAuth, (req: Request, res: Response) => {
-  const { token, auth } = req as AuthRequest;
+// Runs after requireAuth — binds the session to AsyncLocalStorage so every
+// log call within this request automatically carries userName + sessionId.
+const withContext = (req: Request, _res: Response, next: NextFunction): void => {
+  const { userName, sessionId } = (req as AuthRequest).auth;
+  storage.run({ userName, sessionId }, next);
+};
+
+app.post('/api/auth/logout', requireAuth, withContext, (req: Request, res: Response) => {
+  const { token } = req as AuthRequest;
   sessions.remove(token);
-  log.info('User logged out', { userName: auth.userName, sessionId: auth.sessionId });
+  log.info('User logged out');
   res.status(204).end();
 });
 
-app.use('/api/todos', requireAuth, createTodoRoutes(db, log));
+app.use('/api/todos', requireAuth, withContext, createTodoRoutes(db, log));
 
 // Serve the React build. The Vite build outputs to ../public at repo root.
 app.use(express.static(publicDir));

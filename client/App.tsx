@@ -20,7 +20,7 @@ export const App = () => {
     return <LoginGate onDone={() => setConfigured(true)} />;
   }
 
-  return <TodoApp onResetSetup={() => setConfigured(false)} />;
+  return <TodoApp onLogout={() => setConfigured(false)} />;
 };
 
 type LoginGateProps = { onDone: () => void };
@@ -121,9 +121,9 @@ const Field = ({ label, required, children }: FieldProps) => (
   </div>
 );
 
-type TodoAppProps = { onResetSetup: () => void };
+type TodoAppProps = { onLogout: () => void };
 
-const TodoApp = ({ onResetSetup }: TodoAppProps) => {
+const TodoApp = ({ onLogout }: TodoAppProps) => {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [draft, setDraft] = useState('');
   const sessionId = getSessionId();
@@ -175,12 +175,11 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
     }
   };
 
-  const resetSetup = async () => {
-    log.info('Setup reset');
-    await api.clear().catch(() => { /* logged in api.ts */ });
+  const logout = async () => {
+    log.info('User logged out');
     await api.logout().catch(() => { /* best-effort */ });
     clearSession();
-    onResetSetup();
+    onLogout();
   };
 
   const triggerServerError = async () => {
@@ -205,8 +204,8 @@ const TodoApp = ({ onResetSetup }: TodoAppProps) => {
             VirtualLog sample app — every action below emits a typed log event.
           </p>
         </div>
-        <button type="button" style={styles.iconButton} onClick={resetSetup}>
-          Reset setup
+        <button type="button" style={styles.iconButton} onClick={logout}>
+          Log out
         </button>
       </header>
 
